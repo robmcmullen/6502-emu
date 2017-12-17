@@ -18,14 +18,14 @@ void step_delay()
 	nanosleep(&req, &rem);
 }
 
-void run_cpu()
+void run_cpu(CPU * cpu)
 {
 	int cycles = 0;
 	int cycles_per_step = (CPU_FREQ / (ONE_SECOND / STEP_DURATION));
 	
 	for (;;) {
 		for (cycles %= cycles_per_step; cycles < cycles_per_step;) {
-			cycles += step_cpu();
+			cycles += step_cpu(cpu);
 			step_uart();
 		}
 		step_delay(); // remove this for more speed
@@ -50,24 +50,28 @@ void raw_stdin()
 
 int main(int argc, char *argv[])
 {
+	CPU *cpu;
+
 	if (argc != 2) {
 		printf("Usage: %s file.rom\n", argv[0]);
 		printf("The first 16k of \"file.rom\" is loaded into the last 16k of memory.\n");
 		return EXIT_FAILURE;
 	}
 	
-	if (load_rom(argv[1]) != 0) {
-		printf("Error loading \"%s\".\n", argv[1]);
-		return EXIT_FAILURE;
-	}
-	
 	raw_stdin(); // allow individual keystrokes to be detected
 	
 	init_tables();
-	init_uart();
 	
-	reset_cpu();
-	run_cpu();
+	cpu = create_cpu();
+	init_uart(cpu);
+	
+	if (load_rom(cpu, argv[1]) != 0) {
+		printf("Error loading \"%s\".\n", argv[1]);
+		return EXIT_FAILURE;
+	}
+
+	reset_cpu(cpu);
+	run_cpu(cpu);
 	
 	return EXIT_SUCCESS;
 }

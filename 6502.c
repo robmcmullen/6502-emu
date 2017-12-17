@@ -7,534 +7,533 @@
 //#define DEBUG
 
 int lengths[NUM_MODES]; // instruction length table, indexed by addressing mode
-uint8_t * (*get_ptr[NUM_MODES])(); // addressing mode decoder table
+uint8_t * (*get_ptr[NUM_MODES])(CPU *); // addressing mode decoder table
 Instruction instructions[0x100]; // instruction data table
 Instruction inst; // the current instruction (used for convenience)
-int jumping; // used to check that we don't need to increment the PC after a jump
 
 /* Flag Checks */
 
-static inline void N_flag(int8_t val)
+static inline void N_flag(CPU *cpu, int8_t val)
 {
-	SR.bits.sign = val < 0;
+	cpu->SR.bits.sign = val < 0;
 }
 
-static inline void Z_flag(uint8_t val)
+static inline void Z_flag(CPU *cpu, uint8_t val)
 {
-	SR.bits.zero = val == 0;
+	cpu->SR.bits.zero = val == 0;
 }
 
 /* Stack Helpers */
 
-static inline void stack_push(uint8_t val)
+static inline void stack_push(CPU *cpu, uint8_t val)
 {
-	memory[0x100+(SP--)] = val;
+	cpu->memory[0x100+(cpu->SP--)] = val;
 }
 
-static inline uint8_t stack_pull()
+static inline uint8_t stack_pull(CPU *cpu)
 {
-	return memory[0x100+(++SP)];
+	return cpu->memory[0x100+(++cpu->SP)];
 }
 
-/* Memory read/write wrappers */
+/* cpu->memory read/write wrappers */
 
-static inline uint8_t * read_ptr()
+static inline uint8_t * read_ptr(CPU *cpu)
 {
-	return read_addr = get_ptr[inst.mode]();
+	return cpu->read_addr = get_ptr[inst.mode](cpu);
 }
 
-static inline uint8_t * write_ptr()
+static inline uint8_t * write_ptr(CPU *cpu)
 {
-	return write_addr = get_ptr[inst.mode]();
+	return cpu->write_addr = get_ptr[inst.mode](cpu);
 }
 
 /* Instruction Implementations */
 
-static void inst_ADC()
+static void inst_ADC(CPU *cpu)
 {
-	uint8_t operand = * read_ptr();
-	int tmp = A + operand + (SR.bits.carry & 1);
-	SR.bits.carry = tmp > 0xFF;
-	SR.bits.overflow =  ((A^tmp)&(operand^tmp)&0x80) != 0;
-	A = tmp & 0xFF;
-	N_flag(A);
-	Z_flag(A);
+	uint8_t operand = * read_ptr(cpu);
+	int tmp = cpu->A + operand + (cpu->SR.bits.carry & 1);
+	cpu->SR.bits.carry = tmp > 0xFF;
+	cpu->SR.bits.overflow =  ((cpu->A^tmp)&(operand^tmp)&0x80) != 0;
+	cpu->A = tmp & 0xFF;
+	N_flag(cpu, cpu->A);
+	Z_flag(cpu, cpu->A);
 }
 
-static void inst_AND()
+static void inst_AND(CPU *cpu)
 {
-	A &= * read_ptr();
-	N_flag(A);
-	Z_flag(A);
+	cpu->A &= * read_ptr(cpu);
+	N_flag(cpu, cpu->A);
+	Z_flag(cpu, cpu->A);
 }
 
-static void inst_ASL()
+static void inst_ASL(CPU *cpu)
 {
-	uint8_t tmp = * read_ptr();
-	SR.bits.carry = (tmp & 0x80) != 0;
+	uint8_t tmp = * read_ptr(cpu);
+	cpu->SR.bits.carry = (tmp & 0x80) != 0;
 	tmp <<= 1;
-	N_flag(tmp);
-	Z_flag(tmp);
-	* write_ptr() = tmp;
+	N_flag(cpu, tmp);
+	Z_flag(cpu, tmp);
+	* write_ptr(cpu) = tmp;
 }
 
-static void inst_BCC()
+static void inst_BCC(CPU *cpu)
 {
-	if (!SR.bits.carry) {
-		PC = read_ptr() - memory;
+	if (!cpu->SR.bits.carry) {
+		cpu->PC = read_ptr(cpu) - cpu->memory;
 	}
 }
 
-static void inst_BCS()
+static void inst_BCS(CPU *cpu)
 {
-	if (SR.bits.carry) {
-		PC = read_ptr() - memory;
+	if (cpu->SR.bits.carry) {
+		cpu->PC = read_ptr(cpu) - cpu->memory;
 	}
 }
 
-static void inst_BEQ()
+static void inst_BEQ(CPU *cpu)
 {
-	if (SR.bits.zero) {
-		PC = read_ptr() - memory;
+	if (cpu->SR.bits.zero) {
+		cpu->PC = read_ptr(cpu) - cpu->memory;
 	}
 }
 
-static void inst_BIT()
+static void inst_BIT(CPU *cpu)
 {
-	uint8_t tmp = * read_ptr();
-	N_flag(tmp);
-	Z_flag(tmp & A);
-	SR.bits.overflow = (tmp & 0x40) != 0;
+	uint8_t tmp = * read_ptr(cpu);
+	N_flag(cpu, tmp);
+	Z_flag(cpu, tmp & cpu->A);
+	cpu->SR.bits.overflow = (tmp & 0x40) != 0;
 }
 
-static void inst_BMI()
+static void inst_BMI(CPU *cpu)
 {
-	if (SR.bits.sign) {
-		PC = read_ptr() - memory;
+	if (cpu->SR.bits.sign) {
+		cpu->PC = read_ptr(cpu) - cpu->memory;
 	}
 }
 
-static void inst_BNE()
+static void inst_BNE(CPU *cpu)
 {
-	if (!SR.bits.zero) {
-		PC = read_ptr() - memory;
+	if (!cpu->SR.bits.zero) {
+		cpu->PC = read_ptr(cpu) - cpu->memory;
 	}
 }
 
-static void inst_BPL()
+static void inst_BPL(CPU *cpu)
 {
-	if (!SR.bits.sign) {
-		PC = read_ptr() - memory;
+	if (!cpu->SR.bits.sign) {
+		cpu->PC = read_ptr(cpu) - cpu->memory;
 	}
 }
 
-static void inst_BRK()
+static void inst_BRK(CPU *cpu)
 {
 	uint16_t newPC;
-	memcpy(&newPC, &memory[IRQ_VEC], sizeof(newPC));
-	PC += 2;
-	stack_push(PC >> 8);
-	stack_push(PC & 0xFF);
-	SR.bits.brk = 1;
-	stack_push(SR.byte);
-	SR.bits.interrupt = 1;
-	PC = newPC;
-	jumping = 1;
+	memcpy(&newPC, &cpu->memory[IRQ_VEC], sizeof(newPC));
+	cpu->PC += 2;
+	stack_push(cpu, cpu->PC >> 8);
+	stack_push(cpu, cpu->PC & 0xFF);
+	cpu->SR.bits.brk = 1;
+	stack_push(cpu, cpu->SR.byte);
+	cpu->SR.bits.interrupt = 1;
+	cpu->PC = newPC;
+	cpu->jumping = 1;
 }
 
-static void inst_BVC()
+static void inst_BVC(CPU *cpu)
 {
-	if (!SR.bits.overflow) {
-		PC = read_ptr() - memory;
+	if (!cpu->SR.bits.overflow) {
+		cpu->PC = read_ptr(cpu) - cpu->memory;
 	}
 }
 
-static void inst_BVS()
+static void inst_BVS(CPU *cpu)
 {
-	if (SR.bits.overflow) {
-		PC = read_ptr() - memory;
+	if (cpu->SR.bits.overflow) {
+		cpu->PC = read_ptr(cpu) - cpu->memory;
 	}
 }
 
-static void inst_CLC()
+static void inst_CLC(CPU *cpu)
 {
-	SR.bits.carry = 0;
+	cpu->SR.bits.carry = 0;
 }
 
-static void inst_CLD()
+static void inst_CLD(CPU *cpu)
 {
-	SR.bits.decimal = 0;
+	cpu->SR.bits.decimal = 0;
 }
 
-static void inst_CLI()
+static void inst_CLI(CPU *cpu)
 {
-	SR.bits.interrupt = 0;
+	cpu->SR.bits.interrupt = 0;
 }
 
-static void inst_CLV()
+static void inst_CLV(CPU *cpu)
 {
-	SR.bits.overflow = 0;
+	cpu->SR.bits.overflow = 0;
 }
 
-static void inst_CMP()
+static void inst_CMP(CPU *cpu)
 {
-	uint8_t operand = * read_ptr();
-	uint8_t tmpDiff = A - operand;
-	N_flag(tmpDiff);
-	Z_flag(tmpDiff);
-	SR.bits.carry = A >= operand;
+	uint8_t operand = * read_ptr(cpu);
+	uint8_t tmpDiff = cpu->A - operand;
+	N_flag(cpu, tmpDiff);
+	Z_flag(cpu, tmpDiff);
+	cpu->SR.bits.carry = cpu->A >= operand;
 }
 
-static void inst_CPX()
+static void inst_CPX(CPU *cpu)
 {
-	uint8_t operand = * read_ptr();
-	uint8_t tmpDiff = X - operand;
-	N_flag(tmpDiff);
-	Z_flag(tmpDiff);
-	SR.bits.carry = X >= operand;
+	uint8_t operand = * read_ptr(cpu);
+	uint8_t tmpDiff = cpu->X - operand;
+	N_flag(cpu, tmpDiff);
+	Z_flag(cpu, tmpDiff);
+	cpu->SR.bits.carry = cpu->X >= operand;
 }
 
-static void inst_CPY()
+static void inst_CPY(CPU *cpu)
 {
-	uint8_t operand = * read_ptr();
-	uint8_t tmpDiff = Y - operand;
-	N_flag(tmpDiff);
-	Z_flag(tmpDiff);
-	SR.bits.carry = Y >= operand;
+	uint8_t operand = * read_ptr(cpu);
+	uint8_t tmpDiff = cpu->Y - operand;
+	N_flag(cpu, tmpDiff);
+	Z_flag(cpu, tmpDiff);
+	cpu->SR.bits.carry = cpu->Y >= operand;
 }
 
-static void inst_DEC()
+static void inst_DEC(CPU *cpu)
 {
-	uint8_t tmp = * read_ptr();
+	uint8_t tmp = * read_ptr(cpu);
 	tmp--;
-	N_flag(tmp);
-	Z_flag(tmp);
-	* write_ptr() = tmp;
+	N_flag(cpu, tmp);
+	Z_flag(cpu, tmp);
+	* write_ptr(cpu) = tmp;
 }
 
-static void inst_DEX()
+static void inst_DEX(CPU *cpu)
 {
-	X--;
-	N_flag(X);
-	Z_flag(X);
+	cpu->X--;
+	N_flag(cpu, cpu->X);
+	Z_flag(cpu, cpu->X);
 }
 
-static void inst_DEY()
+static void inst_DEY(CPU *cpu)
 {
-	Y--;
-	N_flag(Y);
-	Z_flag(Y);
+	cpu->Y--;
+	N_flag(cpu, cpu->Y);
+	Z_flag(cpu, cpu->Y);
 }
 
-static void inst_EOR()
+static void inst_EOR(CPU *cpu)
 {
-	A ^= * read_ptr();
-	N_flag(A);
-	Z_flag(A);
+	cpu->A ^= * read_ptr(cpu);
+	N_flag(cpu, cpu->A);
+	Z_flag(cpu, cpu->A);
 }
 
-static void inst_INC()
+static void inst_INC(CPU *cpu)
 {
-	uint8_t tmp = * read_ptr();
+	uint8_t tmp = * read_ptr(cpu);
 	tmp++;
-	N_flag(tmp);
-	Z_flag(tmp);
-	* write_ptr() = tmp;
+	N_flag(cpu, tmp);
+	Z_flag(cpu, tmp);
+	* write_ptr(cpu) = tmp;
 }
 
-static void inst_INX()
+static void inst_INX(CPU *cpu)
 {
-	X++;
-	N_flag(X);
-	Z_flag(X);
+	cpu->X++;
+	N_flag(cpu, cpu->X);
+	Z_flag(cpu, cpu->X);
 }
 
-static void inst_INY()
+static void inst_INY(CPU *cpu)
 {
-	Y++;
-	N_flag(Y);
-	Z_flag(Y);
+	cpu->Y++;
+	N_flag(cpu, cpu->Y);
+	Z_flag(cpu, cpu->Y);
 }
 
-static void inst_JMP()
+static void inst_JMP(CPU *cpu)
 {
-	PC = read_ptr() - memory;
-	jumping = 1;
+	cpu->PC = read_ptr(cpu) - cpu->memory;
+	cpu->jumping = 1;
 }
 
-static void inst_JSR()
+static void inst_JSR(CPU *cpu)
 {
-	uint16_t newPC = read_ptr() - memory;
-	PC += 2;
-	stack_push(PC >> 8);
-	stack_push(PC & 0xFF);
-	PC = newPC;
-	jumping = 1;
+	uint16_t newPC = read_ptr(cpu) - cpu->memory;
+	cpu->PC += 2;
+	stack_push(cpu, cpu->PC >> 8);
+	stack_push(cpu, cpu->PC & 0xFF);
+	cpu->PC = newPC;
+	cpu->jumping = 1;
 }
 
-static void inst_LDA()
+static void inst_LDA(CPU *cpu)
 {
-	A = * read_ptr();
-	N_flag(A);
-	Z_flag(A);
+	cpu->A = * read_ptr(cpu);
+	N_flag(cpu, cpu->A);
+	Z_flag(cpu, cpu->A);
 }
 
-static void inst_LDX()
+static void inst_LDX(CPU *cpu)
 {
-	X = * read_ptr();
-	N_flag(X);
-	Z_flag(X);
+	cpu->X = * read_ptr(cpu);
+	N_flag(cpu, cpu->X);
+	Z_flag(cpu, cpu->X);
 }
 
-static void inst_LDY()
+static void inst_LDY(CPU *cpu)
 {
-	Y = * read_ptr();
-	N_flag(Y);
-	Z_flag(Y);
+	cpu->Y = * read_ptr(cpu);
+	N_flag(cpu, cpu->Y);
+	Z_flag(cpu, cpu->Y);
 }
 
-static void inst_LSR()
+static void inst_LSR(CPU *cpu)
 {
-	uint8_t tmp = * read_ptr();
-	SR.bits.carry = tmp & 1;
+	uint8_t tmp = * read_ptr(cpu);
+	cpu->SR.bits.carry = tmp & 1;
 	tmp >>= 1;
-	N_flag(tmp);
-	Z_flag(tmp);
-	* write_ptr() = tmp;
+	N_flag(cpu, tmp);
+	Z_flag(cpu, tmp);
+	* write_ptr(cpu) = tmp;
 }
 
-static void inst_NOP()
+static void inst_NOP(CPU *cpu)
 {
 	// nothing
 }
 
-static void inst_ORA()
+static void inst_ORA(CPU *cpu)
 {
-	A |= * read_ptr();
-	N_flag(A);
-	Z_flag(A);
+	cpu->A |= * read_ptr(cpu);
+	N_flag(cpu, cpu->A);
+	Z_flag(cpu, cpu->A);
 }
 
-static void inst_PHA()
+static void inst_PHA(CPU *cpu)
 {
-	stack_push(A);
+	stack_push(cpu, cpu->A);
 }
 
-static void inst_PHP()
+static void inst_PHP(CPU *cpu)
 {
-	SR.bits.brk = 1; // this is slightly unexpected, but it's what the real hardware does.
-	stack_push(SR.byte);
+	cpu->SR.bits.brk = 1; // this is slightly unexpected, but it's what the real hardware does.
+	stack_push(cpu, cpu->SR.byte);
 }
 
-static void inst_PLA()
+static void inst_PLA(CPU *cpu)
 {
-	A = stack_pull();
-	N_flag(A);
-	Z_flag(A);
+	cpu->A = stack_pull(cpu);
+	N_flag(cpu, cpu->A);
+	Z_flag(cpu, cpu->A);
 }
 
-static void inst_PLP()
+static void inst_PLP(CPU *cpu)
 {
-	SR.byte = stack_pull();
-	SR.bits.unused = 1;
+	cpu->SR.byte = stack_pull(cpu);
+	cpu->SR.bits.unused = 1;
 }
 
-static void inst_ROL()
+static void inst_ROL(CPU *cpu)
 {
-	int tmp = (* read_ptr()) << 1;
-	tmp |= SR.bits.carry & 1;
-	SR.bits.carry = tmp > 0xFF;
+	int tmp = (* read_ptr(cpu)) << 1;
+	tmp |= cpu->SR.bits.carry & 1;
+	cpu->SR.bits.carry = tmp > 0xFF;
 	tmp &= 0xFF;
-	N_flag(tmp);
-	Z_flag(tmp);
-	* write_ptr() = tmp;
+	N_flag(cpu, tmp);
+	Z_flag(cpu, tmp);
+	* write_ptr(cpu) = tmp;
 }
 
-static void inst_ROR()
+static void inst_ROR(CPU *cpu)
 {
-	int tmp = * read_ptr();
-	tmp |= SR.bits.carry << 8;
-	SR.bits.carry = tmp & 1;
+	int tmp = * read_ptr(cpu);
+	tmp |= cpu->SR.bits.carry << 8;
+	cpu->SR.bits.carry = tmp & 1;
 	tmp >>= 1;
-	N_flag(tmp);
-	Z_flag(tmp);
-	* write_ptr() = tmp;
+	N_flag(cpu, tmp);
+	Z_flag(cpu, tmp);
+	* write_ptr(cpu) = tmp;
 }
 
-static void inst_RTI()
+static void inst_RTI(CPU *cpu)
 {
-	SR.byte = stack_pull();
-	SR.bits.unused = 1;
-	PC = stack_pull();
-	PC |= stack_pull() << 8;
-	//PC += 1;
-	jumping = 1;
+	cpu->SR.byte = stack_pull(cpu);
+	cpu->SR.bits.unused = 1;
+	cpu->PC = stack_pull(cpu);
+	cpu->PC |= stack_pull(cpu) << 8;
+	//cpu->PC += 1;
+	cpu->jumping = 1;
 }
 
-static void inst_RTS()
+static void inst_RTS(CPU *cpu)
 {
-	PC = stack_pull();
-	PC |= stack_pull() << 8;
-	PC += 1;
-	jumping = 1;
+	cpu->PC = stack_pull(cpu);
+	cpu->PC |= stack_pull(cpu) << 8;
+	cpu->PC += 1;
+	cpu->jumping = 1;
 }
 
-static void inst_SBC()
+static void inst_SBC(CPU *cpu)
 {
-	uint8_t operand = ~(* read_ptr()); // identical to ACD with the operand inverted
-	int tmp = A + operand + (SR.bits.carry & 1);
-	SR.bits.carry = tmp > 0xFF;
-	SR.bits.overflow =  ((A^tmp)&(operand^tmp)&0x80) != 0;
-	A = tmp & 0xFF;
-	N_flag(A);
-	Z_flag(A);
+	uint8_t operand = ~(* read_ptr(cpu)); // identical to cpu->ACD with the operand inverted
+	int tmp = cpu->A + operand + (cpu->SR.bits.carry & 1);
+	cpu->SR.bits.carry = tmp > 0xFF;
+	cpu->SR.bits.overflow =  ((cpu->A^tmp)&(operand^tmp)&0x80) != 0;
+	cpu->A = tmp & 0xFF;
+	N_flag(cpu, cpu->A);
+	Z_flag(cpu, cpu->A);
 }
 
-static void inst_SEC()
+static void inst_SEC(CPU *cpu)
 {
-	SR.bits.carry = 1;
+	cpu->SR.bits.carry = 1;
 }
 
-static void inst_SED()
+static void inst_SED(CPU *cpu)
 {
-	SR.bits.decimal = 1;
+	cpu->SR.bits.decimal = 1;
 	printf("DECIMAL! :(\r\n"); // TODO
 }
 
-static void inst_SEI()
+static void inst_SEI(CPU *cpu)
 {
-	SR.bits.interrupt = 1;
+	cpu->SR.bits.interrupt = 1;
 }
 
-static void inst_STA()
+static void inst_STA(CPU *cpu)
 {
-	* write_ptr() = A;
+	* write_ptr(cpu) = cpu->A;
 }
 
-static void inst_STX()
+static void inst_STX(CPU *cpu)
 {
-	* write_ptr() = X;
+	* write_ptr(cpu) = cpu->X;
 }
 
-static void inst_STY()
+static void inst_STY(CPU *cpu)
 {
-	* write_ptr() = Y;
+	* write_ptr(cpu) = cpu->Y;
 }
 
-static void inst_TAX()
+static void inst_TAX(CPU *cpu)
 {
-	X = A;
-	N_flag(X);
-	Z_flag(X);
+	cpu->X = cpu->A;
+	N_flag(cpu, cpu->X);
+	Z_flag(cpu, cpu->X);
 }
 
-static void inst_TAY()
+static void inst_TAY(CPU *cpu)
 {
-	Y = A;
-	N_flag(Y);
-	Z_flag(Y);
+	cpu->Y = cpu->A;
+	N_flag(cpu, cpu->Y);
+	Z_flag(cpu, cpu->Y);
 }
 
-static void inst_TSX()
+static void inst_TSX(CPU *cpu)
 {
-	X = SP;
-	N_flag(X);
-	Z_flag(X);
+	cpu->X = cpu->SP;
+	N_flag(cpu, cpu->X);
+	Z_flag(cpu, cpu->X);
 }
 
-static void inst_TXA()
+static void inst_TXA(CPU *cpu)
 {
-	A = X;
-	N_flag(A);
-	Z_flag(A);
+	cpu->A = cpu->X;
+	N_flag(cpu, cpu->A);
+	Z_flag(cpu, cpu->A);
 }
 
-static void inst_TXS()
+static void inst_TXS(CPU *cpu)
 {
-	SP = X;
+	cpu->SP = cpu->X;
 }
 
-static void inst_TYA()
+static void inst_TYA(CPU *cpu)
 {
-	A = Y;
-	N_flag(A);
-	Z_flag(A);
+	cpu->A = cpu->Y;
+	N_flag(cpu, cpu->A);
+	Z_flag(cpu, cpu->A);
 }
 
-/* Addressing Implementations */
+/* cpu->Addressing Implementations */
 
-uint8_t * get_IMM()
+uint8_t * get_IMM(CPU *cpu)
 {
-	return &memory[(uint16_t) (PC+1)];
+	return &cpu->memory[(uint16_t) (cpu->PC+1)];
 }
 
-uint16_t get_uint16()
+uint16_t get_uint16(CPU *cpu)
 { // used only as part of other modes
 	uint16_t index;
-	memcpy(&index, get_IMM(), sizeof(index)); // hooray for optimising compilers
+	memcpy(&index, get_IMM(cpu), sizeof(index)); // hooray for optimising compilers
 	return index;
 }
 
-uint8_t * get_ZP()
+uint8_t * get_ZP(CPU *cpu)
 {
-	return &memory[* get_IMM()];
+	return &cpu->memory[* get_IMM(cpu)];
 }
 
-uint8_t * get_ZPX()
+uint8_t * get_ZPX(CPU *cpu)
 {
-	return &memory[((* get_IMM()) + X) & 0xFF];
+	return &cpu->memory[((* get_IMM(cpu)) + cpu->X) & 0xFF];
 }
 
-uint8_t * get_ZPY()
+uint8_t * get_ZPY(CPU *cpu)
 {
-	return &memory[((* get_IMM()) + Y) & 0xFF];
+	return &cpu->memory[((* get_IMM(cpu)) + cpu->Y) & 0xFF];
 }
 
-uint8_t * get_ACC()
+uint8_t * get_ACC(CPU *cpu)
 {
-	return &A;
+	return &cpu->A;
 }
 
-uint8_t * get_ABS()
+uint8_t * get_ABS(CPU *cpu)
 {
-	return &memory[get_uint16()];
+	return &cpu->memory[get_uint16(cpu)];
 }
 
-uint8_t * get_ABSX()
+uint8_t * get_ABSX(CPU *cpu)
 {
-	return &memory[(uint16_t) (get_uint16() + X)];
+	return &cpu->memory[(uint16_t) (get_uint16(cpu) + cpu->X)];
 }
 
-uint8_t * get_ABSY()
+uint8_t * get_ABSY(CPU *cpu)
 {
-	return &memory[(uint16_t) (get_uint16() + Y)];
+	return &cpu->memory[(uint16_t) (get_uint16(cpu) + cpu->Y)];
 }
 
-uint8_t * get_IND()
+uint8_t * get_IND(CPU *cpu)
 {
 	uint16_t ptr;
-	memcpy(&ptr, get_ABS(), sizeof(ptr));
-	return &memory[ptr];
+	memcpy(&ptr, get_ABS(cpu), sizeof(ptr));
+	return &cpu->memory[ptr];
 }
 
-uint8_t * get_XIND()
+uint8_t * get_XIND(CPU *cpu)
 {
 	uint16_t ptr;
-	memcpy(&ptr, get_ZPX(), sizeof(ptr));
-	return &memory[ptr];
+	memcpy(&ptr, get_ZPX(cpu), sizeof(ptr));
+	return &cpu->memory[ptr];
 }
 
-uint8_t * get_INDY()
+uint8_t * get_INDY(CPU *cpu)
 {
 	uint16_t ptr;
-	memcpy(&ptr, get_ZP(), sizeof(ptr));
-	ptr += Y;
-	return &memory[ptr];
+	memcpy(&ptr, get_ZP(cpu), sizeof(ptr));
+	ptr += cpu->Y;
+	return &cpu->memory[ptr];
 }
 
-uint8_t * get_REL()
+uint8_t * get_REL(CPU *cpu)
 {
-	return &memory[(uint16_t) (PC + (int8_t) * get_IMM())];
+	return &cpu->memory[(uint16_t) (cpu->PC + (int8_t) * get_IMM(cpu))];
 }
 
 
@@ -558,7 +557,7 @@ void init_tables() // this is only done at runtime to improve code readability.
 	lengths[ZPX]	= 2;
 	lengths[ZPY]	= 2;
 	
-	/* Addressing Modes */
+	/* cpu->Addressing Modes */
 	
 	get_ptr[ACC]	= get_ACC;
 	get_ptr[ABS]	= get_ABS;
@@ -833,23 +832,25 @@ void init_tables() // this is only done at runtime to improve code readability.
 	instructions[0xFF] = (Instruction) {"???", inst_NOP, IMPL, 1};
 }
 
-void reset_cpu()
+void reset_cpu(CPU *cpu)
 {
-	A = 0;
-	X = 0;
-	Y = 0;
-	SP = 0xFF;
+	cpu->A = 0;
+	cpu->X = 0;
+	cpu->Y = 0;
+	cpu->SP = 0xFF;
 	
-	SR.byte = 0;
-	SR.bits.interrupt = 1;
-	SR.bits.unused = 1;
+	cpu->SR.byte = 0;
+	cpu->SR.bits.interrupt = 1;
+	cpu->SR.bits.unused = 1;
+
+	cpu->jumping = 0;
 	
-	memcpy(&PC, &memory[RST_VEC], sizeof(PC));
+	memcpy(&cpu->PC, &cpu->memory[RST_VEC], sizeof(cpu->PC));
 }
 
-int load_rom(char * filename)
+int load_rom(CPU *cpu, char * filename)
 { // TODO allow more flexible loading
-	memset(memory, 0, sizeof(memory)); // clear ram first
+	memset(cpu->memory, 0, sizeof(cpu->memory)); // clear ram first
 	
 	FILE * fp = fopen(filename, "r");
 	if (fp == NULL) {
@@ -857,7 +858,7 @@ int load_rom(char * filename)
 		return -1;
 	}
 	
-	if (!fread(&memory[0xC000], 0x4000, 1, fp)) {
+	if (!fread(&cpu->memory[0xC000], 0x4000, 1, fp)) {
 		printf("Error: ROM file too short.\n");
 		return -1;
 	}
@@ -866,24 +867,34 @@ int load_rom(char * filename)
 	return 0;
 }
 
-int step_cpu() // returns cycle count
+int step_cpu(CPU *cpu) // returns cycle count
 {
-	inst = instructions[memory[PC]];
+	inst = instructions[cpu->memory[cpu->PC]];
 
 	#ifdef DEBUG
-		printf("PC=%04X OPCODE=%02X: %s\r\n", PC, memory[PC], inst.mnemonic);
-		printf("A=%02X X=%02X Y=%02X SR=%02X SP=%02X\r\n", A, X, Y, SR.byte, SP);
+		printf("PC=%04cpu->X OPCODE=%02X: %s\r\n", cpu->PC, cpu->memory[cpu->PC], inst.mnemonic);
+		printf("A=%02cpu->X cpu->X=%02cpu->X cpu->Y=%02cpu->X SR=%02cpu->X SP=%02X\r\n", cpu->A, cpu->X, cpu->Y, cpu->SR.byte, cpu->SP);
 	
-		/* dump memory for analysis (slows down emulation significantly) */
+		/* dump cpu->memory for analysis (slows down emulation significantly) */
 	
 		FILE * fp = fopen("memdump", "w");
-		fwrite(&memory, sizeof(memory), 1, fp);
+		fwrite(&cpu->memory, sizeof(cpu->memory), 1, fp);
 		fclose(fp);
 	#endif
 	
-	jumping = 0;
-	inst.function();
-	if (jumping == 0) PC += lengths[inst.mode];
+	cpu->jumping = 0;
+	inst.function(cpu);
+	if (cpu->jumping == 0) cpu->PC += lengths[inst.mode];
 	
 	return inst.cycles;
+}
+
+CPU *create_cpu() // create CPU structure
+{
+	CPU *cpu;
+
+	cpu = malloc(sizeof(CPU));
+	reset_cpu(cpu);
+
+	return cpu;
 }
