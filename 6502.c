@@ -21,6 +21,8 @@ Instruction inst; // the current instruction (used for convenience)
 int jumping; // used to check that we don't need to increment the PC after a jump
 void * read_addr;
 void * write_addr;
+uint8_t before_value[3];
+int before_value_index;
 
 /* Flag Checks */
 
@@ -55,7 +57,10 @@ static inline uint8_t * read_ptr()
 
 static inline uint8_t * write_ptr()
 {
-	return write_addr = get_ptr[inst.mode]();
+	write_addr = get_ptr[inst.mode]();
+	before_value[0] = *(uint8_t *)write_addr;
+	before_value_index = 1;
+	return write_addr;
 }
 
 /* Branch logic common to all branch instructions */
