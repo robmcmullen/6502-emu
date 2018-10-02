@@ -23,6 +23,7 @@ extern void * read_addr;
 extern void * write_addr;
 extern uint8_t before_value[3];
 extern int before_value_index;
+extern int branch_taken;
 
 struct StatusBits{
 	bool carry:1; // bit 0

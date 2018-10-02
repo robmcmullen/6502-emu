@@ -19,6 +19,7 @@ uint8_t * (*get_ptr[NUM_MODES])(); // addressing mode decoder table
 Instruction instructions[0x100]; // instruction data table
 Instruction inst; // the current instruction (used for convenience)
 int jumping; // used to check that we don't need to increment the PC after a jump
+int branch_taken;
 void * read_addr;
 void * write_addr;
 uint8_t before_value[3];
@@ -72,6 +73,12 @@ static inline void take_branch()
 	PC = read_ptr() - memory;
 	if ((PC ^ oldPC) & 0xff00) extra_cycles += 1; // addr crosses page boundary
 	extra_cycles += 1;
+	branch_taken = 1;
+}
+
+static inline void not_taking_branch()
+{
+	branch_taken = -1;
 }
 
 /* Instruction Implementations */
@@ -115,6 +122,9 @@ static void inst_BCC()
 	if (!SR.bits.carry) {
 		take_branch();
 	}
+	else {
+		not_taking_branch();
+	}
 }
 
 static void inst_BCS()
@@ -122,12 +132,18 @@ static void inst_BCS()
 	if (SR.bits.carry) {
 		take_branch();
 	}
+	else {
+		not_taking_branch();
+	}
 }
 
 static void inst_BEQ()
 {
 	if (SR.bits.zero) {
 		take_branch();
+	}
+	else {
+		not_taking_branch();
 	}
 }
 
@@ -144,6 +160,9 @@ static void inst_BMI()
 	if (SR.bits.sign) {
 		take_branch();
 	}
+	else {
+		not_taking_branch();
+	}
 }
 
 static void inst_BNE()
@@ -151,12 +170,18 @@ static void inst_BNE()
 	if (!SR.bits.zero) {
 		take_branch();
 	}
+	else {
+		not_taking_branch();
+	}
 }
 
 static void inst_BPL()
 {
 	if (!SR.bits.sign) {
 		take_branch();
+	}
+	else {
+		not_taking_branch();
 	}
 }
 
@@ -179,12 +204,18 @@ static void inst_BVC()
 	if (!SR.bits.overflow) {
 		take_branch();
 	}
+	else {
+		not_taking_branch();
+	}
 }
 
 static void inst_BVS()
 {
 	if (SR.bits.overflow) {
 		take_branch();
+	}
+	else {
+		not_taking_branch();
 	}
 }
 
