@@ -18,8 +18,7 @@ int lengths[NUM_MODES]; // instruction length table, indexed by addressing mode
 uint8_t * (*get_ptr[NUM_MODES])(); // addressing mode decoder table
 Instruction instructions[0x100]; // instruction data table
 Instruction inst; // the current instruction (used for convenience)
-int jumping; // used to check that we don't need to increment the PC after a jump
-int branch_taken;
+Result result_flag;
 void * read_addr;
 void * write_addr;
 uint8_t before_value[3];
@@ -73,12 +72,12 @@ static inline void take_branch()
 	PC = read_ptr() - memory;
 	if ((PC ^ oldPC) & 0xff00) extra_cycles += 1; // addr crosses page boundary
 	extra_cycles += 1;
-	branch_taken = 1;
+	result_flag = BRANCH_TAKEN;
 }
 
 static inline void not_taking_branch()
 {
-	branch_taken = -1;
+	result_flag = BRANCH_NOT_TAKEN;
 }
 
 /* Instruction Implementations */
@@ -196,7 +195,7 @@ static void inst_BRK()
 	stack_push(SR.byte);
 	SR.bits.interrupt = 1;
 	PC = newPC;
-	jumping = 1;
+	result_flag = JUMP;
 }
 
 static void inst_BVC()
@@ -322,7 +321,7 @@ static void inst_INY()
 static void inst_JMP()
 {
 	PC = read_ptr() - memory;
-	jumping = 1;
+	result_flag = JUMP;
 }
 
 static void inst_JSR()
@@ -332,7 +331,7 @@ static void inst_JSR()
 	stack_push(PC >> 8);
 	stack_push(PC & 0xFF);
 	PC = newPC;
-	jumping = 1;
+	result_flag = JUMP;
 }
 
 static void inst_LDA()
@@ -442,7 +441,7 @@ static void inst_RTI()
 	PC = stack_pull();
 	PC |= stack_pull() << 8;
 	//PC += 1;
-	jumping = 1;
+	result_flag = JUMP;
 }
 
 static void inst_RTS()
@@ -450,7 +449,7 @@ static void inst_RTS()
 	PC = stack_pull();
 	PC |= stack_pull() << 8;
 	PC += 1;
-	jumping = 1;
+	result_flag = JUMP;
 }
 
 static void inst_SBC()
@@ -1023,10 +1022,10 @@ int step_cpu(int verbose) // returns cycle count
 		printf("  %-10s                      A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%3d\n", inst.mnemonic, A, X, Y, SR.byte, SP, (int)((total_cycles * 3) % 341));
 	}
 
-	jumping = 0;
+	result_flag = NOP;
 	extra_cycles = 0;
 	inst.function();
-	if (jumping == 0) PC += lengths[inst.mode];
+	if (result_flag != JUMP) PC += lengths[inst.mode];
 
 	// 7 cycle instructions (e.g. ROL $nnnn,X) don't have a penalty cycle for
 	// crossing a page boundary.

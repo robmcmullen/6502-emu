@@ -23,7 +23,14 @@ extern void * read_addr;
 extern void * write_addr;
 extern uint8_t before_value[3];
 extern int before_value_index;
-extern int branch_taken;
+
+typedef enum {
+	NOP,
+	BRANCH_TAKEN,
+	BRANCH_NOT_TAKEN,
+	JUMP,
+} Result;
+extern Result result_flag;
 
 struct StatusBits{
 	bool carry:1; // bit 0
