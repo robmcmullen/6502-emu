@@ -1,3 +1,6 @@
+#ifndef _6502_EMU_H_
+#define _6502_EMU_H_
+
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -85,3 +88,5 @@ int load_rom(char * filename, int load_addr);
 int step_cpu(int verbose);
 
 void save_memory(char * filename);
+
+#endif /* _6502_EMU_H_ */
